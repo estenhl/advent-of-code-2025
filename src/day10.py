@@ -1,8 +1,10 @@
 import os
 import numpy as np
+from queue import PriorityQueue
 from tqdm import tqdm
 
-with open(os.path.join('data', 'day10', 'input.txt'), 'r') as file:
+
+with open(os.path.join('data', 'day10', 'example.txt'), 'r') as file:
     lines = [line.strip() for line in file.readlines()]
 
 parse_goal = lambda s: [{'.': 0, '#': 1}[c] for c in s[1:-1]]
@@ -68,6 +70,43 @@ def breadth_first_search(goal_state, buttons, state_transformer, state_filter=No
             new_state = state_transformer(current_state, button)
             queue.append((new_state, depth + 1))
 
+def heuristic(state, goal_state, depth):
+    return np.sum(goal_state - state) + depth
+
+def astar(goal_state, buttons, state_transformer, state_filter=None):
+    queue = PriorityQueue()
+    visited = set()
+
+    initial_state = tuple(np.zeros(len(goal_state), dtype=int))
+    queue.put((heuristic(initial_state, goal_state, 0), initial_state, 0))
+
+    while queue:
+        _, current_state, depth = queue.get()
+        current_state = np.asarray(current_state)
+
+        print(f'{goal_state}: {current_state}')
+
+        if tuple(current_state) in visited:
+            continue
+
+        if (
+            state_filter is not None and
+            state_filter(current_state, goal_state)
+        ):
+            continue
+
+        visited.add(tuple(current_state))
+
+        if np.array_equal(current_state, goal_state):
+            return depth
+
+        for button in buttons:
+            new_state = state_transformer(current_state, button)
+            queue.put((
+                heuristic(new_state, goal_state, depth + 1),
+                tuple(new_state),
+                depth + 1
+            ))
 
 light_toggles = [
     breadth_first_search(
@@ -82,7 +121,7 @@ print(f'Light toggles: {np.sum(light_toggles)}')
 
 print([entries[0]['joltage']])
 joltage_toggles = [
-    breadth_first_search(
+    astar(
         goal_state=entry['joltage'],
         buttons=entry['buttons'],
         state_transformer=transform_accumulator_state,
