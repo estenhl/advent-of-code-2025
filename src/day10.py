@@ -1,13 +1,13 @@
 from curses import BUTTON1_PRESSED
 import os
 import numpy as np
-from functools import reduce
+from functools import lru_cache, reduce
 from itertools import product
 from queue import PriorityQueue
 from tqdm import tqdm
 
 
-with open(os.path.join('data', 'day10', 'example.txt'), 'r') as file:
+with open(os.path.join('data', 'day10', 'input.txt'), 'r') as file:
     lines = [line.strip() for line in file.readlines()]
 
 parse_goal = lambda s: np.asarray([{'.': 0, '#': 1}[c] for c in s[1:-1]])
@@ -84,13 +84,29 @@ light_toggles = [
 
 print(f'Light toggles: {np.sum(light_toggles)}')
 
+def reduce_state(state):
+    assert np.all(state % 2 == 0)
+
+    multiplier = 1
+
+    while True:
+        multiplier *= 2
+        state = state // 2
+
+        if (
+            np.any(state % 2 == 1) or
+            np.array_equal(state, np.zeros_like(state))
+        ):
+            break
+
+    return multiplier, state
+
+@lru_cache(maxsize=None)
 def bifurcate_step(current_state, buttons):
-    print(current_state)
+    current_state = np.asarray(current_state)
+
     if np.array_equal(current_state, np.zeros_like(current_state)):
         return 0
-
-    if np.any(current_state < 0):
-        return np.inf
 
     possible_presses = list(product((0, 1), repeat=len(buttons)))
     configurations = [
@@ -98,41 +114,82 @@ def bifurcate_step(current_state, buttons):
         for presses in possible_presses[1:]
     ]
     changes = [
-        np.bincount(
-            reduce(lambda x, y: x + y, configuration, []),
-            minlength=len(current_state)
+        (
+            np.bincount(
+                reduce(lambda x, y: x + y, configuration, tuple()),
+                minlength=len(current_state)
+            ),
+            configuration
         )
         for configuration in configurations
     ]
-    #print(buttons)
-    #for i in range(len(changes)):
-        #print(f'{possible_presses[i]} -> {configurations[i]} -> {changes[i]}')
+
+    print(f'Before: {len(changes)}')
+
+    best_changes = {}
+
+    for change, configuration in changes:
+        key = tuple(change)
+        if key not in best_changes or len(best_changes[key]) > len(configuration):
+            best_changes[key] = configuration
+
+    changes = [
+        (np.asarray(change), configuration)
+        for change, configuration in best_changes.items()
+    ]
+
+    print(f'After: {len(changes)}')
+
     evens = [
-        (current_state - change, len(configurations[i]))
-        for i, change in enumerate(changes)
+        (current_state - change, configuration)
+        for change, configuration in changes
         if (
-            np.all((current_state - change) % 2 == 0) and
-            np.all(change <= current_state)
+            np.all((current_state - change) % 2 == 0)# and
+            #np.all(change <= current_state)
         )
     ]
 
-    return np.amin([
-        (
-            2 * bifurcate_step(current_state - change, buttons) +
-            len(configurations[i])
+    print(evens)
+
+    if len(evens) == 0:
+        print(f'Returning')
+        return np.inf
+
+    presses = []
+
+    for new_state, configuration in evens:
+        multiplier, reduced = reduce_state(new_state)
+        print(f'Trying {new_state} -> {reduced}')
+        presses.append(
+            multiplier *
+            bifurcate_step(
+                tuple(int(x) for x in reduced),
+                buttons
+            ) + len(configuration)
         )
-        for change, configuration in evens
-    ])
+
+    return np.amin(presses)
 
 def bifurcate(goal_state, buttons):
-    return bifurcate_step(goal_state, buttons)
+    print(f'Starting {goal_state}')
+    presses = bifurcate_step(
+        tuple(int(x) for x in goal_state),
+        tuple((tuple(configuration) for configuration in buttons))
+    )
+
+    if np.isinf(presses):
+        print(goal_state, buttons)
+        raise ValueError()
+
+    return presses
 
 joltage_toggles = [
     bifurcate(
         goal_state=entry['joltage'],
         buttons=entry['buttons']
     )
-    for entry in tqdm(entries)
+    for entry in tqdm(entries[39:40])
 ]
 
+print(joltage_toggles)
 print(f'Joltage toggles: {np.sum(joltage_toggles)}')
