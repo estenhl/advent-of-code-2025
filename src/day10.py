@@ -84,25 +84,8 @@ light_toggles = [
 
 print(f'Light toggles: {np.sum(light_toggles)}')
 
-def reduce_state(state):
-    assert np.all(state % 2 == 0)
-
-    multiplier = 1
-
-    while True:
-        multiplier *= 2
-        state = state // 2
-
-        if (
-            np.any(state % 2 == 1) or
-            np.array_equal(state, np.zeros_like(state))
-        ):
-            break
-
-    return multiplier, state
-
 @lru_cache(maxsize=None)
-def bifurcate_step(current_state, buttons):
+def decomposition_step(current_state, buttons):
     current_state = np.asarray(current_state)
 
     if np.array_equal(current_state, np.zeros_like(current_state)):
@@ -111,7 +94,7 @@ def bifurcate_step(current_state, buttons):
     possible_presses = list(product((0, 1), repeat=len(buttons)))
     configurations = [
         [buttons[i] for i, press in enumerate(presses) if press == 1]
-        for presses in possible_presses[1:]
+        for presses in possible_presses
     ]
     changes = [
         (
@@ -123,8 +106,6 @@ def bifurcate_step(current_state, buttons):
         )
         for configuration in configurations
     ]
-
-    print(f'Before: {len(changes)}')
 
     best_changes = {}
 
@@ -138,58 +119,39 @@ def bifurcate_step(current_state, buttons):
         for change, configuration in best_changes.items()
     ]
 
-    print(f'After: {len(changes)}')
-
-    evens = [
-        (current_state - change, configuration)
-        for change, configuration in changes
-        if (
-            np.all((current_state - change) % 2 == 0)# and
-            #np.all(change <= current_state)
-        )
-    ]
-
-    print(evens)
+    evens = []
+    for change, configuration in changes:
+        remainder = current_state - change
+        if not np.all(remainder % 2 == 0):
+            continue
+        if np.all(change == 0) and not np.all(current_state % 2 == 0):
+            continue
+        if np.any(remainder < 0):
+            continue
+        evens.append((remainder, configuration))
 
     if len(evens) == 0:
-        print(f'Returning')
         return np.inf
 
     presses = []
 
     for new_state, configuration in evens:
-        multiplier, reduced = reduce_state(new_state)
-        print(f'Trying {new_state} -> {reduced}')
         presses.append(
-            multiplier *
-            bifurcate_step(
-                tuple(int(x) for x in reduced),
+            2 *
+            decomposition_step(
+                tuple(int(x) for x in (new_state // 2)),
                 buttons
             ) + len(configuration)
         )
 
     return np.amin(presses)
 
-def bifurcate(goal_state, buttons):
-    print(f'Starting {goal_state}')
-    presses = bifurcate_step(
-        tuple(int(x) for x in goal_state),
-        tuple((tuple(configuration) for configuration in buttons))
-    )
-
-    if np.isinf(presses):
-        print(goal_state, buttons)
-        raise ValueError()
-
-    return presses
-
 joltage_toggles = [
-    bifurcate(
-        goal_state=entry['joltage'],
-        buttons=entry['buttons']
+    decomposition_step(
+        tuple(int(x) for x in entry['joltage']),
+        tuple((tuple(configuration) for configuration in entry['buttons']))
     )
-    for entry in tqdm(entries[39:40])
+    for entry in tqdm(entries)
 ]
 
-print(joltage_toggles)
 print(f'Joltage toggles: {np.sum(joltage_toggles)}')
